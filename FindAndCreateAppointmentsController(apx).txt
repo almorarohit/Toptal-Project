@@ -1,0 +1,98 @@
+public class FindAndCreateAppointmentsController {
+     @AuraEnabled
+    public static List <Medical_Specialization__c> fetchSpecalizations(){
+        try {
+        	return [SELECT Id,Name,Appointment_Price__c FROM Medical_Specialization__c limit 4];     
+        }
+        catch (Exception e) {
+            throw new AuraHandledException(e.getMessage());
+        }
+    }
+    
+    @AuraEnabled
+    public static List <Physician__c> checkPhysicianAvailability(Datetime d1,Datetime d2,String medSpclzId){
+        try {
+            List <Appointment__c> appList = [Select id,End_Time__c,Start_Time__c,Physician__c,Physician__r.Medical_Specialization__c FROM Appointment__c 
+                                     WHERE Physician__r.Medical_Specialization__c=:medSpclzId 
+                                     AND ((Start_Time__c<=:d2 AND End_Time__c>=:d2) OR (Start_Time__c<=:d1 AND End_Time__c>=:d1)OR (Start_Time__c>=:d1 AND End_Time__c<=:d2))];
+            Set <String> phySetId = new Set<String>();
+            if(appList.size()>0){
+                for(Appointment__c app:appList){
+                    phySetId.add(app.Physician__c);
+                }
+            }
+            List <Event> eventList = [Select id,startdatetime,enddatetime,whoid FROM event 
+                                              WHERE (startdatetime<=:d2 AND enddatetime>=:d2) OR (startdatetime<=:d1 AND enddatetime>=:d1) OR (startdatetime>=:d1 AND enddatetime<=:d2)];
+            Set <String> conSetId = new Set<String>();
+            if(eventList.size()>0){
+                for(Event ev:eventList){
+                    conSetId.add(ev.whoid);
+                }
+            }
+            List <Physician__c> phyList = [SELECT Id,Contact__c,Medical_Specialization__c,Name FROM Physician__c
+                                          WHERE Medical_Specialization__c=:medSpclzId AND Id NOT IN:phySetId AND Contact__c NOT IN:conSetId];
+            return phyList;
+        }
+        catch (Exception e) {
+            throw new AuraHandledException(e.getMessage());
+        }
+        
+    }
+    
+    @AuraEnabled
+    public static void handleAfterSave(String appId){
+        try {
+            Appointment__c app = [SELECT Id,Name,Patient__r.Email__c,Patient__r.Name,Start_Time__c,End_Time__c,Total_Cost__c,Physician__r.Name,Physician__r.Contact__r.Email
+                              FROM Appointment__c WHERE Id=:appId];
+            String starttime = string.valueOf(app.Start_Time__c.date()) + ' '+ app.Start_Time__c.hour()+':'+app.Start_Time__c.minute();
+            String endtime = string.valueOf(app.End_Time__c.date()) + ' '+ app.End_Time__c.hour()+':'+app.End_Time__c.minute();
+            Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
+            String[] toAddresses = new String[] {app.Patient__r.Email__c};
+            mail.setToAddresses(toAddresses);
+            mail.setSubject('Appointment Details for ' + app.Patient__r.Name + '('+app.Name+')');
+            mail.setSenderDisplayName('Medical Support');
+            String str = 'Hi '+app.Patient__r.Name+',\n\n'+'Please find below the upcoming appointment details:-\n\n';
+            str = str+'Physician Name: '+app.Physician__r.Name+'\n';
+            str = str+'Appointment Scheduled Start: '+starttime+'\n';
+            str = str+'Appointment Scheduled End: '+endtime+'\n';
+            str = str+'Total Cost: $'+app.Total_Cost__c+'\n\n';
+            str = str+'Thanks and Regards,\nMedical Service Team';
+            mail.setPlainTextBody(str);
+            Messaging.sendEmail(new Messaging.SingleEmailMessage[] { mail });
+            system.debug(string.valueOf(app.Start_Time__c));
+            system.debug(app.Start_Time__c.formatGMT('yyyy-MM-dd\'T\'HH:mm:ss.SSSZ'));
+            GoogleCalendarSync.postMyCalendarEvent(app.Physician__r.Contact__r.Email, string.valueOf(app.Start_Time__c.formatGMT('yyyy-MM-dd\'T\'HH:mm:ss.SSSZ')), string.valueOf(app.End_Time__c.formatGMT('yyyy-MM-dd\'T\'HH:mm:ss.SSSZ')), app.Name, app.Patient__r.Name);
+        }
+        catch (Exception e) {
+            throw new AuraHandledException(e.getMessage());
+        }
+        
+        
+    }
+    
+     @AuraEnabled
+    public static void requestCalendarAccess(String physicianId){
+        try {
+            Physician__c phy = [SELECT Id,Contact__r.Email,Medical_Specialization__c,Name FROM Physician__c WHERE Id=:physicianId];
+            Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
+            String[] toAddresses = new String[] {phy.Contact__r.Email};
+            mail.setToAddresses(toAddresses);
+            mail.setSubject('Calendar Access Request in Salesforce');
+            mail.setSenderDisplayName('Medical Support');
+            String body = '<html lang="ja"><body>'+
+           '<br><br>'+'Dear '+phy.Name+ ','+
+           '<br><br>'+'You are receiving this mail because '+UserInfo.getName()+'(Email:'+UserInfo.getUserEmail()+') has requested the calendar access from you in Salesforce.'+
+           '<br><br>'+'Please follow the steps mentioned in below link to provide the access. Please contact the admin in case of any issues.'+
+           '<br><br><a href="https://help.salesforce.com/s/articleView?id=sf.calendar_sharing_share_lex.htm&type=5">How to provide calendar access to your colleagues in salesforce?</a>'+
+                            '<br><br>'+'Kind regards,'+
+                            '<br>'+'Medical Service Team';
+            mail.setHtmlBody(body);
+            Messaging.sendEmail(new Messaging.SingleEmailMessage[] { mail });
+        }
+        catch (Exception e) {
+            throw new AuraHandledException(e.getMessage());
+        }
+        
+    }
+    
+}

@@ -1,0 +1,32 @@
+public with sharing class GoogleCalendarSync {
+      
+    public static Http http = new Http();
+    public static HTTPResponse response;
+    public static HttpRequest request;
+    
+ 	@future(callout = true)
+    public static void getMyCalendar() {
+         
+        request = new HttpRequest();
+        request.setMethod('GET');
+        request.setEndpoint('callout:Google_Calendar/calendar/v3/calendars/almorarohitsharma@gmail.com/events?timeMin=2022-07-20T00:00:00Z&timeMax=2022-07-21T23:59:59Z');
+        response = http.send(request); 
+        Map<String,Object> objlist = (Map<String,Object>)Json.deserializeUntyped(response.getBody());
+        System.debug(objlist.get('items'));
+    }
+    
+    @future(callout = true)
+    public static void postMyCalendarEvent(String userEmail,String starttime,String endtime,String description,String patientName) {
+        Http http = new Http();
+    	HTTPResponse response;
+    	HttpRequest request;
+        request = new HttpRequest();
+        request.setMethod('POST');
+        request.setEndpoint('callout:Google_Calendar/calendar/v3/calendars/'+userEmail+'/events');
+		String ev = '{"summary":"Appointment Created with '+patientName+'","description": "'+description+'","start":{"dateTime":"'+starttime+'","timeZone":"Asia/Kolkata"},"end":{"dateTime":"'+endtime+'","timeZone":"Asia/Kolkata"}}';
+        request.setBody(ev);
+        response = http.send(request); 
+        System.debug(response.getBody());
+        
+    }
+}
